@@ -284,16 +284,23 @@ class PureComponent extends Component {
  */
 function memo(c, comparer) {
 	function shouldUpdate(nextProps) {
-		return !comparer(this.props, nextProps);
+		let ref = this.props.ref;
+		let updateRef = ref==nextProps.ref;
+		if (!updateRef) {
+			if (typeof ref=='function') ref(null);
+			else ref.current = null;
+		}
+		return (comparer==null
+			? shallowDiffers(this.props, nextProps)
+			: !comparer(this.props, nextProps)) || !updateRef;
 	}
 
-	function Memoed(props, context) {
-		this.shouldComponentUpdate = this.shouldComponentUpdate || comparer!=null
-			? shouldUpdate
-			: PureComponent.prototype.shouldComponentUpdate;
-		return c.call(this, props, context);
+	function Memoed(props) {
+		this.shouldComponentUpdate = shouldUpdate;
+		return h(c, { ...props });
 	}
 	Memoed.displayName = 'Memo(' + (c.displayName || c.name) + ')';
+	Memoed._forwarded = true;
 	return Memoed;
 }
 
@@ -331,7 +338,7 @@ function forwardRef(fn) {
 let oldVNodeHook = options.vnode;
 options.vnode = vnode => {
 	let type = vnode.type;
-	if (type!=null && type._forwarded) {
+	if (type!=null && type._forwarded && vnode.ref!=null) {
 		vnode.props.ref = vnode.ref;
 		vnode.ref = null;
 	}
