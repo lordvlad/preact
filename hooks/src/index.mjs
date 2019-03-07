@@ -1,5 +1,5 @@
 /* globals requestAnimationFrame */
-import { options } from '../src/index.mjs'
+import { options } from '../../src/index.mjs'
 
 /** @type {number} */
 let currentIndex
