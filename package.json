@@ -1,26 +1,16 @@
 {
-  "name": "preact",
+  "name": "@lordvlad/preact",
   "amdName": "preact",
   "version": "10.0.0-alpha.0",
   "private": false,
   "description": "Fast 3kb React-compatible Virtual DOM library.",
-  "main": "dist/preact.js",
-  "module": "dist/preact.mjs",
-  "umd:main": "dist/preact.umd.js",
+  "module": "src/preact.mjs",
   "source": "src/index.js",
   "license": "MIT",
-  "types": "src/index.d.ts",
   "scripts": {
-    "build": "npm-run-all --parallel build:*",
-    "build:core": "microbundle build --raw",
-    "build:debug": "microbundle build --raw --cwd debug",
-    "build:hooks": "microbundle build --raw --cwd hooks",
-    "build:compat": "microbundle build --raw --cwd compat --globals 'preact/hooks=preactHooks'",
     "dev": "microbundle watch --raw --format cjs,umd",
     "dev:hooks": "microbundle watch --raw --format cjs --cwd hooks",
-    "test": "npm-run-all lint build --parallel test:mocha test:karma test:ts",
-    "test:flow": "flow check",
-    "test:ts": "tsc -p test/ts/ && mocha --require babel-register test/ts/**/*-test.js",
+    "test": "npm-run-all lint build --parallel test:mocha test:karma",
     "test:mocha": "mocha --recursive --require babel-register test/shared test/node",
     "test:karma": "cross-env COVERAGE=true karma start karma.conf.js --single-run",
     "test:mocha:watch": "npm run test:mocha -- --watch",
@@ -29,39 +19,15 @@
     "test:karma:bench": "cross-env PERFORMANCE=true COVERAGE=false karma start karma.conf.js --grep=test/benchmarks/**.js --single-run",
     "benchmark": "npm run test:karma:bench -- no-single-run",
     "test:size": "bundlesize",
-    "lint": "eslint src test",
-    "postinstall": "node -e \"console.log('\\u001b[35m\\u001b[1mLove Preact? You can now donate to our open collective:\\u001b[22m\\u001b[39m\\n > \\u001b[34mhttps://opencollective.com/preact/donate\\u001b[0m')\""
-  },
-  "eslintConfig": {
-    "extends": "developit",
-    "settings": {
-      "react": {
-        "pragma": "createElement"
-      }
-    },
-    "rules": {
-      "prefer-rest-params": 0,
-      "prefer-spread": 0,
-      "no-cond-assign": 0,
-      "react/jsx-no-bind": 0,
-      "react/prefer-stateless-function": 0,
-      "react/sort-comp": 0,
-      "jest/valid-expect": 0,
-      "jest/no-disabled-tests": 0,
-      "react/no-find-dom-node": 0
-    }
+    "lint": "eslint src test"
   },
   "files": [
     "src",
-    "dist",
-    "compat/dist",
     "compat/src",
     "compat/server.js",
     "compat/package.json",
-    "debug/dist",
     "debug/src",
     "debug/package.json",
-    "hooks/dist",
     "hooks/src",
     "hooks/package.json"
   ],
@@ -105,8 +71,6 @@
     "coveralls": "^3.0.0",
     "cross-env": "^5.2.0",
     "diff": "^3.5.0",
-    "eslint": "^5.1.0",
-    "eslint-config-developit": "^1.1.1",
     "flow-bin": "^0.79.1",
     "karma": "^3.0.0",
     "karma-babel-preprocessor": "^7.0.0",
@@ -121,13 +85,11 @@
     "karma-sourcemap-loader": "^0.3.7",
     "karma-webpack": "^3.0.5",
     "lodash": "^4.17.10",
-    "microbundle": "^0.11.0",
     "mocha": "^5.2.0",
     "npm-run-all": "^4.0.0",
     "sinon": "^6.1.3",
     "sinon-chai": "^3.0.0",
-    "typescript": "^3.0.1",
-    "webpack": "^4.3.0"
+    "standard": "^12.0.1"
   },
   "bundlesize": [
     {
