@@ -1,4 +1,4 @@
-import { enqueueRender } from './component'
+import { enqueueRender } from './component.mjs'
 
 export let i = 0
 
