@@ -9,6 +9,7 @@ import options from './options.mjs'
   * @returns {import('./internal').VNode}
   */
 export function createElement (type, props, children) {
+  props = !props ? {} : Object.assign({}, props)
   if (props == null) props = {}
   if (arguments.length > 3) {
     children = [children]
@@ -27,9 +28,9 @@ export function createElement (type, props, children) {
       if (props[i] === undefined) props[i] = type.defaultProps[i]
     }
   }
-  let ref = props.ref
+  const ref = props.ref
   if (ref) delete props.ref
-  let key = props.key
+  const key = props.key
   if (key) delete props.key
 
   return createVNode(type, props, null, key, ref)
@@ -39,7 +40,7 @@ export function createElement (type, props, children) {
  * Create a VNode (used internally by Preact)
  * @param {import('./internal').VNode["type"]} type The node name or Component
  * Constructor for this virtual node
- * @param {object} props The properites of this virtual node
+ * @param {object | null} props The properites of this virtual node
  * @param {string | number} text If this virtual node represents a text node,
  * this is the text of the node
  * @param {string |number | null} key The key for this virtual node, used when
@@ -62,6 +63,7 @@ export function createVNode (type, props, text, key, ref) {
     _lastDomChild: null,
     _component: null
   }
+  vnode._self = vnode
 
   if (options.vnode) options.vnode(vnode)
 
@@ -79,7 +81,7 @@ export /* istanbul ignore next */ function Fragment () { }
  * Specifically, this should be used anywhere a user could provide a boolean, string, or number where
  * a VNode or Component is desired instead
  * @param {boolean | string | number | import('./internal').VNode} possibleVNode A possible VNode
- * @returns {import('./internal').VNode}
+ * @returns {import('./internal').VNode | null}
  */
 export function coerceToVNode (possibleVNode) {
   if (possibleVNode == null || typeof possibleVNode === 'boolean') return null
@@ -92,8 +94,10 @@ export function coerceToVNode (possibleVNode) {
   }
 
   // Clone vnode if it has already been used. ceviche/#57
-  if (possibleVNode._dom != null) {
-    return createVNode(possibleVNode.type, possibleVNode.props, possibleVNode.text, possibleVNode.key, null)
+  if (possibleVNode._dom != null || possibleVNode._component != null) {
+    const vnode = createVNode(possibleVNode.type, possibleVNode.props, possibleVNode.text, possibleVNode.key, null)
+    vnode._dom = possibleVNode._dom
+    return vnode
   }
 
   return possibleVNode

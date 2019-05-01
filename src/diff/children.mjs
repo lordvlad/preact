@@ -17,99 +17,95 @@ import { EMPTY_OBJ, EMPTY_ARR } from '../constants.mjs'
  * which have mounted
  * @param {import('../internal').Component} ancestorComponent The direct parent
  * component to the ones being diffed
+ * @param {Node | Text} oldDom The current attached DOM
+ * element any new dom elements should be placed around. Likely `null` on first
+ * render (except when hydrating). Can be a sibling DOM element when diffing
+ * Fragments that have siblings. In most cases, it starts out as `oldChildren[0]._dom`
  */
-export function diffChildren (parentDom, newParentVNode, oldParentVNode, context, isSvg, excessDomChildren, mounts, ancestorComponent) {
-  let childVNode, i, j, p, index, oldVNode, newDom,
-    nextDom, sibDom, focus,
-    childDom
+export function diffChildren (parentDom, newParentVNode, oldParentVNode, context, isSvg, excessDomChildren, mounts, ancestorComponent, oldDom) {
+  let childVNode, i, j, oldVNode, newDom, sibDom
 
-  let newChildren = getVNodeChildren(newParentVNode)
-  let oldChildren = oldParentVNode == null || oldParentVNode == EMPTY_OBJ ? EMPTY_ARR : getVNodeChildren(oldParentVNode) /* eslint-disable-line eqeqeq */
+  let newChildren = newParentVNode._children || toChildArray(newParentVNode.props.children, newParentVNode._children = [], coerceToVNode, true)
+  // This is a compression of oldParentVNode!=null && oldParentVNode != EMPTY_OBJ && oldParentVNode._children || EMPTY_ARR
+  // as EMPTY_OBJ._children should be `undefined`.
+  let oldChildren = oldParentVNode != null ? oldParentVNode._children : EMPTY_ARR
 
   let oldChildrenLength = oldChildren.length
 
-  childDom = oldChildren.length ? oldChildren[0] && oldChildren[0]._dom : null
-  if (excessDomChildren != null) {
-    for (i = 0; i < excessDomChildren.length; i++) {
-      if (excessDomChildren[i] != null) {
-        childDom = excessDomChildren[i]
-        break
+  let oldChild
+  // Only in very specific places should this logic be invoked (top level `render` and `diffElementNodes`).
+  // I'm using `EMPTY_OBJ` to signal when `diffChildren` is invoked in these situations. I can't use `null`
+  // for this purpose, because `null` is a valid value for `oldDom` which can mean to skip to this logic
+  // (e.g. if mounting a new tree in which the old DOM should be ignored (usually for Fragments).
+  if (oldDom === EMPTY_OBJ) {
+    oldDom = null
+    if (excessDomChildren != null) {
+      for (i = 0; oldDom == null && i < excessDomChildren.length; i++) {
+        oldDom = excessDomChildren[i]
+      }
+    } else {
+      for (i = 0; oldDom == null && i < oldChildrenLength; i++) {
+        oldDom = oldChildren[i] && oldChildren[i]._dom
+        oldChild = oldChildren[i]
       }
     }
   }
 
   for (i = 0; i < newChildren.length; i++) {
     childVNode = newChildren[i] = coerceToVNode(newChildren[i])
-    oldVNode = index = null
 
-    // Check if we find a corresponding element in oldChildren and store the
-    // index where the element was found.
-    p = oldChildren[i]
-    if (p != null && (childVNode.key == null && p.key == null ? (childVNode.type === p.type) : (childVNode.key === p.key))) {
-      index = i
-    } else {
-      for (j = 0; j < oldChildrenLength; j++) {
-        p = oldChildren[j]
-        if (p != null) {
-          if (childVNode.key == null && p.key == null ? (childVNode.type === p.type) : (childVNode.key === p.key)) {
-            index = j
+    if (childVNode != null) {
+      // Check if we find a corresponding element in oldChildren.
+      // If found, delete the array item by setting to `undefined`.
+      // We use `undefined`, as `null` is reserved for empty placeholders
+      // (holes).
+      oldVNode = oldChildren[i]
+
+      if (oldVNode === null || (oldVNode != null && (childVNode.key == null && oldVNode.key == null ? (childVNode.type === oldVNode.type) : (childVNode.key === oldVNode.key)))) {
+        oldChildren[i] = undefined
+      } else {
+        // Either oldVNode === undefined or oldChildrenLength > 0,
+        // so after this loop oldVNode == null or oldVNode is a valid value.
+        for (j = 0; j < oldChildrenLength; j++) {
+          oldVNode = oldChildren[j]
+          if (oldVNode != null && (childVNode.key == null && oldVNode.key == null ? (childVNode.type === oldVNode.type) : (childVNode.key === oldVNode.key))) {
+            oldChildren[j] = undefined
+            if (oldChildrenLength !== newChildren.length && oldVNode.type !== (oldChild && oldChild.type)) {
+              oldDom = oldVNode._dom
+            }
             break
           }
+          oldVNode = null
         }
       }
-    }
 
-    // If we have found a corresponding old element we store it in a variable
-    // and delete it from the array. That way the next iteration can skip this
-    // element.
-    if (index != null) {
-      oldVNode = oldChildren[index]
-      oldChildren[index] = null
-    }
+      // Morph the old element into the new one, but don't append it to the dom yet
+      newDom = diff(parentDom, childVNode, oldVNode, context, isSvg, excessDomChildren, mounts, ancestorComponent, null, oldDom)
+      // Only proceed if the vnode has not been unmounted by `diff()` above.
+      if (newDom != null) {
+        if (childVNode._lastDomChild != null) {
+          // Only Fragments or components that return Fragment like VNodes will
+          // have a non-null _lastDomChild. Continue the diff from the end of
+          // this Fragment's DOM tree.
+          newDom = childVNode._lastDomChild
+        } else if (excessDomChildren === oldVNode || newDom !== oldDom || newDom.parentNode == null) {
+          // NOTE: excessDomChildren==oldVNode above:
+          // This is a compression of excessDomChildren==null && oldVNode==null!
+          // The values only have the same type when `null`.
 
-    nextDom = childDom != null && childDom.nextSibling
-
-    // Morph the old element into the new one, but don't append it to the dom yet
-    newDom = diff(oldVNode == null ? null : oldVNode._dom, parentDom, childVNode, oldVNode, context, isSvg, excessDomChildren, mounts, ancestorComponent)
-
-    // Only proceed if the vnode has not been unmounted by `diff()` above.
-    if (childVNode != null && newDom != null) {
-      // Store focus in case moving children around changes it. Note that we
-      // can't just check once for every tree, because we have no way to
-      // differentiate wether the focus was reset by the user in a lifecycle
-      // hook or by reordering dom nodes.
-      focus = document.activeElement
-
-      if (childVNode._lastDomChild != null) {
-        // Only Fragments or components that return Fragment like VNodes will
-        // have a non-null _lastDomChild. Continue the diff from the end of
-        // this Fragment's DOM tree.
-        newDom = childVNode._lastDomChild
-      } else if (excessDomChildren == oldVNode || newDom != childDom || newDom.parentNode == null) { /* eslint-disable-line eqeqeq */
-        // NOTE: excessDomChildren==oldVNode above:
-        // This is a compression of excessDomChildren==null && oldVNode==null!
-        // The values only have the same type when `null`.
-
-        outer: if (childDom == null || childDom.parentNode !== parentDom) { /* eslint-disable-line no-labels */
-          parentDom.appendChild(newDom)
-        } else {
-          sibDom = childDom
-          j = 0
-          while ((sibDom = sibDom.nextSibling) && j++ < oldChildrenLength / 2) {
-            if (sibDom === newDom) {
-              break outer /* eslint-disable-line no-labels */
+          outer: if (oldDom == null || oldDom.parentNode !== parentDom) { // eslint-disable-line no-labels
+            parentDom.appendChild(newDom)
+          } else {
+            sibDom = oldDom
+            j = 0
+            while ((sibDom = sibDom.nextSibling) && j++ < oldChildrenLength / 2) {
+              if (sibDom === newDom) { break outer } // eslint-disable-line no-labels
             }
+            parentDom.insertBefore(newDom, oldDom)
           }
-          parentDom.insertBefore(newDom, childDom)
         }
+        oldDom = newDom.nextSibling
       }
-
-      // Restore focus if it was changed
-      if (focus !== document.activeElement) {
-        focus.focus()
-      }
-
-      childDom = newDom != null ? newDom.nextSibling : nextDom
     }
   }
 
@@ -117,20 +113,7 @@ export function diffChildren (parentDom, newParentVNode, oldParentVNode, context
   if (excessDomChildren != null && newParentVNode.type !== Fragment) for (i = excessDomChildren.length; i--;) if (excessDomChildren[i] != null) excessDomChildren[i].remove()
 
   // Remove remaining oldChildren if there are any.
-  for (i = oldChildren.length; i--;) if (oldChildren[i] != null) unmount(oldChildren[i], ancestorComponent)
-}
-
-/**
- * Get the children of a virtual node as a flat array
- * @param {import('../internal').VNode} vnode The virtual node to get the
- * children of
- * @returns {Array<import('../internal').VNode>} The virtual node's children
- */
-function getVNodeChildren (vnode) {
-  if (vnode._children == null) {
-    toChildArray(vnode.props.children, vnode._children = [], coerceToVNode)
-  }
-  return vnode._children
+  for (i = oldChildrenLength; i--;) if (oldChildren[i] != null) unmount(oldChildren[i], ancestorComponent)
 }
 
 /**
@@ -138,12 +121,18 @@ function getVNodeChildren (vnode) {
  * @param {import('../index').ComponentChildren} children The unflattened
  * children of a virtual node
  * @param {Array<import('../internal').VNode | null>} [flattened] An flat array of children to modify
+ * @param {typeof import('../create-element').coerceToVNode} [map] Function that
+ * will be applied on each child if the `vnode` is not `null`
+ * @param {boolean} [keepHoles] wether to coerce `undefined` to `null` or not.
+ * This is needed for Components without children like `<Foo />`.
  */
-export function toChildArray (children, flattened, map) {
+export function toChildArray (children, flattened, map, keepHoles) {
   if (flattened == null) flattened = []
-  if (children == null || typeof children === 'boolean') {} else if (Array.isArray(children)) {
+  if (children == null || typeof children === 'boolean') {
+    if (keepHoles) flattened.push(null)
+  } else if (Array.isArray(children)) {
     for (let i = 0; i < children.length; i++) {
-      toChildArray(children[i], flattened)
+      toChildArray(children[i], flattened, map, keepHoles)
     }
   } else {
     flattened.push(map ? map(children) : children)

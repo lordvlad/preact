@@ -10,17 +10,21 @@ import options from '../options.mjs'
  * @param {boolean} isSvg Whether or not this node is an SVG node
  */
 export function diffProps (dom, newProps, oldProps, isSvg) {
-  for (const i in newProps) {
-    if (i !== 'children' && i !== 'key' && (!oldProps || oldProps[i] != newProps[i])) { /* eslint-disable-line eqeqeq */
-      setProperty(dom, i, newProps[i], oldProps[i], isSvg)
+  let keys = Object.keys(newProps).sort()
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i] !== 'children' && keys[i] !== 'key' && (!oldProps || ((keys[i] === 'value' || keys[i] === 'checked') ? dom : oldProps)[keys[i]] !== newProps[keys[i]])) {
+      setProperty(dom, keys[i], newProps[keys[i]], oldProps[keys[i]], isSvg)
     }
   }
+
   for (const i in oldProps) {
     if (i !== 'children' && i !== 'key' && (!newProps || !(i in newProps))) {
       setProperty(dom, i, null, oldProps[i], isSvg)
     }
   }
 }
+
+const CAMEL_REG = /-?(?=[A-Z])/g
 
 /**
  * Set a property value on a DOM node
@@ -45,24 +49,24 @@ function setProperty (dom, name, value, oldValue, isSvg) {
     if (typeof value === 'string') {
       s.cssText = value
     } else {
-      if (typeof oldValue === 'string') s.cssText = ''
-      // remove values not in the new list
-      for (let i in oldValue) {
-        if (value == null || !(i in value)) s.setProperty(i, '')
+      if (typeof oldValue === 'string') {
+        s.cssText = ''
+      } else {
+        // remove values not in the new list
+        for (let i in oldValue) {
+          if (value == null || !(i in value)) s.setProperty(i.replace(CAMEL_REG, '-'), '')
+        }
       }
-    }
 
-    for (let i in value) {
-      v = value[i]
-      if (oldValue == null || v !== oldValue[i]) {
-        s.setProperty(i.replace(/-?(?=[A-Z])/g, '-'), typeof v === 'number' && IS_NON_DIMENSIONAL.test(i) === false ? (v + 'px') : v)
+      for (let i in value) {
+        v = value[i]
+        if (oldValue == null || v !== oldValue[i]) {
+          s.setProperty(i.replace(CAMEL_REG, '-'), typeof v === 'number' && IS_NON_DIMENSIONAL.test(i) === false ? (v + 'px') : v)
+        }
       }
     }
   } else if (name === 'dangerouslySetInnerHTML') {
-    // Avoid re-applying the same '__html' if it did not changed between re-render
-    if (!value || !oldValue || value.__html != oldValue.__html) { /* eslint-disable-line eqeqeq */
-      dom.innerHTML = (value && value.__html) || ''
-    }
+
   } else if (name[0] === 'o' && name[1] === 'n') {
     // Benchmark for comparison: https://esbench.com/bench/574c954bdb965b9a00965ac6
     let useCapture = name !== (name = name.replace(/Capture$/, ''))
@@ -75,12 +79,14 @@ function setProperty (dom, name, value, oldValue, isSvg) {
       dom.removeEventListener(name, eventProxy, useCapture)
     }
     (dom._listeners || (dom._listeners = {}))[name] = value
-  } else if (name !== 'list' && !isSvg && (name in dom)) {
+  } else if (name !== 'list' && name !== 'tagName' && !isSvg && (name in dom)) {
     dom[name] = value == null ? '' : value
   } else if (value == null || value === false) {
-    dom.removeAttribute(name)
+    if (name !== (name = name.replace(/^xlink:?/, ''))) dom.removeAttributeNS('http://www.w3.org/1999/xlink', name.toLowerCase())
+    else dom.removeAttribute(name)
   } else if (typeof value !== 'function') {
-    dom.setAttribute(name, value)
+    if (name !== (name = name.replace(/^xlink:?/, ''))) dom.setAttributeNS('http://www.w3.org/1999/xlink', name.toLowerCase(), value)
+    else dom.setAttribute(name, value)
   }
 }
 

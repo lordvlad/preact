@@ -12,6 +12,7 @@ import { Fragment } from './create-element.mjs'
 export function Component (props, context) {
   this.props = props
   this.context = context
+  // this.constructor // When component is functional component, this is reset to functional component
   // if (this.state==null) this.state = {};
   // this.state = {};
   // this._dirty = true;
@@ -20,12 +21,13 @@ export function Component (props, context) {
   // Other properties that Component will have set later,
   // shown here as commented out for quick reference
   // this.base = null;
+  // this._context = null
   // this._ancestorComponent = null; // Always set right after instantiation
   // this._vnode = null;
   // this._nextState = null; // Only class components
   // this._prevVNode = null;
   // this._processingException = null; // Always read, set only when handling error
-  // this._constructor = null; // Only functional components, always set right after instantiation
+  // this._pendingError = null; // Always read, set only when handling error. This is used to indicate at diffTime to set _processingException
 }
 
 /**
@@ -40,10 +42,6 @@ Component.prototype.setState = function (update, callback) {
   // only clone state when copying to nextState the first time.
   let s = (this._nextState !== this.state && this._nextState) || (this._nextState = Object.assign({}, this.state))
 
-  // Needed for the devtools to check if state has changed after the tree
-  // has been committed
-  this._prevState = Object.assign({}, s)
-
   // if update() mutates state in-place, skip the copy:
   if (typeof update !== 'function' || (update = update(s, this.props))) {
     Object.assign(s, update)
@@ -52,10 +50,10 @@ Component.prototype.setState = function (update, callback) {
   // Skip update if updater function returned null
   if (update == null) return
 
-  if (callback != null) this._renderCallbacks.push(callback)
-
-  this._force = false
-  enqueueRender(this)
+  if (this._vnode) {
+    if (callback) this._renderCallbacks.push(callback)
+    enqueueRender(this)
+  }
 }
 
 /**
@@ -64,15 +62,17 @@ Component.prototype.setState = function (update, callback) {
  * re-renderd
  */
 Component.prototype.forceUpdate = function (callback) {
-  let vnode = this._vnode; let dom = this._vnode._dom; let parentDom = this._parentDom
-  if (parentDom != null) {
+  let vnode = this._vnode
+  let dom = this._vnode._dom
+  let parentDom = this._parentDom
+  if (parentDom) {
     // Set render mode so that we can differantiate where the render request
     // is coming from. We need this because forceUpdate should never call
     // shouldComponentUpdate
-    if (this._force == null) this._force = true
+    const force = callback !== false
 
     let mounts = []
-    dom = diff(dom, parentDom, vnode, vnode, this._context, parentDom.ownerSVGElement !== undefined, null, mounts, this._ancestorComponent)
+    dom = diff(parentDom, vnode, vnode, this._context, parentDom.ownerSVGElement !== undefined, null, mounts, this._ancestorComponent, force, dom)
     if (dom != null && dom.parentNode !== parentDom) {
       parentDom.appendChild(dom)
     }
@@ -81,7 +81,7 @@ Component.prototype.forceUpdate = function (callback) {
     // Reset mode to its initial value for the next render
     this._force = null
   }
-  if (callback != null) callback()
+  if (callback) callback()
 }
 
 /**
@@ -106,7 +106,7 @@ let q = []
  * Asynchronously schedule a callback
  * @type {(cb) => void}
  */
-const defer = typeof Promise === 'function' ? Promise.resolve().then.bind(Promise.resolve()) : setTimeout
+const defer = typeof Promise === 'function' ? Promise.prototype.then.bind(Promise.resolve()) : setTimeout
 
 /*
  * The value of `Component.debounce` must asynchronously invoke the passed in callback. It is
@@ -130,7 +130,7 @@ export function enqueueRender (c) {
 /** Flush the render queue by rerendering all queued components */
 function process () {
   let p
-  while ((p = q.pop())) {
-    if (p._dirty) p.forceUpdate()
-  }
+  q.sort((a, b) => b._depth - a._depth)
+  // forceUpdate's callback argument is reused here to indicate a non-forced update.
+  while ((p = q.pop())) { if (p._dirty) p.forceUpdate(false) }
 }

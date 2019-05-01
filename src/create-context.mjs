@@ -7,10 +7,8 @@ export let i = 0
  * @param {any} defaultValue
  */
 export function createContext (defaultValue) {
-  const id = '__cC' + i++
-
   const context = {
-    _id: id,
+    _id: '__cC' + i++,
     _defaultValue: defaultValue
   }
 
@@ -20,18 +18,24 @@ export function createContext (defaultValue) {
   Consumer.contextType = context
   context.Consumer = Consumer
 
-  const ctx = { [id]: null }
+  const ctx = {}
 
   function initProvider (comp) {
     const subs = []
     comp.getChildContext = () => {
-      ctx[id] = comp
+      ctx[context._id] = comp
       return ctx
     }
-    comp.componentDidUpdate = () => {
-      const v = comp.props.value
-      for (const c of subs) { if (v !== c.context) { c.context = v; enqueueRender(c) } }
+    comp.shouldComponentUpdate = props => {
+      subs.map(c => {
+        // Check if still mounted
+        if (c._parentDom) {
+          c.context = props.value
+          enqueueRender(c)
+        }
+      })
     }
+
     comp.sub = (c) => {
       subs.push(c)
       const old = c.componentWillUnmount

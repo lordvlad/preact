@@ -18,8 +18,7 @@ options.render = vnode => {
   currentIndex = 0
 
   if (!currentComponent.__hooks) return
-  currentComponent.__hooks._pendingEffects.forEach(invokeEffect)
-  currentComponent.__hooks._pendingEffects = []
+  currentComponent.__hooks._pendingEffects = handleEffects(currentComponent.__hooks._pendingEffects)
 }
 
 let oldAfterDiff = options.diffed
@@ -34,8 +33,7 @@ options.diffed = vnode => {
 
   // TODO: Consider moving to a global queue. May need to move
   // this to the `commit` option
-  hooks._pendingLayoutEffects.forEach(invokeEffect)
-  hooks._pendingLayoutEffects = []
+  hooks._pendingLayoutEffects = handleEffects(hooks._pendingLayoutEffects)
 }
 
 let oldBeforeUnmount = options.unmount
@@ -57,12 +55,12 @@ options.unmount = vnode => {
  * @returns {import('./internal').HookState}
  */
 function getHookState (index) {
+  if (options.hook) options.hook(currentComponent)
   // Largely inspired by:
-  // * https://github.com/michael-klein/funcy.js/blob/master/src/hooks/core_hooks.mjs
-  // * https://github.com/michael-klein/funcy.js/blob/master/src/lib/renderer.mjs
+  // * https://github.com/michael-klein/funcy.js/blob/f6be73468e6ec46b0ff5aa3cc4c9baf72a29025a/src/hooks/core_hooks.mjs
+  // * https://github.com/michael-klein/funcy.js/blob/650beaa58c43c33a74820a3c98b3c7079cf2e333/src/renderer.mjs
   // Other implementations to look at:
   // * https://codesandbox.io/s/mnox05qp8
-
   const hooks = currentComponent.__hooks || (currentComponent.__hooks = { _list: [], _pendingEffects: [], _pendingLayoutEffects: [] })
 
   if (index >= hooks._list.length) {
@@ -85,8 +83,11 @@ export function useReducer (reducer, initialState, init) {
       init == null ? invokeOrReturn(null, initialState) : init(initialState),
 
       action => {
-        hookState._value[0] = reducer(hookState._value[0], action)
-        hookState._component.setState({})
+        const nextValue = reducer(hookState._value[0], action)
+        if (hookState._value[0] !== nextValue) {
+          hookState._value[0] = nextValue
+          hookState._component.setState({})
+        }
       }
     ]
   }
@@ -134,6 +135,14 @@ export function useRef (initialValue) {
   return state._value
 }
 
+export function useImperativeHandle (ref, createHandle, args) {
+  const state = getHookState(currentIndex++)
+  if (argsChanged(state._args, args)) {
+    state._args = args
+    ref.current = createHandle()
+  }
+}
+
 /**
  * @param {() => any} callback
  * @param {any[]} args
@@ -159,6 +168,16 @@ export function useCallback (callback, args) {
 }
 
 /**
++ * Display a custom label for a custom hook for the devtools panel
++ * @type {<T>(value: T, cb?: (value: T) => string | number) => void}
++ */
+export function useDebugValue (value, formatter) {
+  if (options.useDebugValue) {
+    options.useDebugValue(formatter ? formatter(value) : value)
+  }
+}
+
+/**
  * @param {import('./internal').PreactContext} context
  */
 export function useContext (context) {
@@ -179,7 +198,8 @@ export function useContext (context) {
  * Invoke a component's pending effects after the next frame renders
  * @type {(component: import('./internal').Component) => void}
  */
-let afterPaint = () => {}
+/* istanbul ignore next */
+let afterPaint = () => { }
 
 /**
  * After paint effects consumer.
@@ -188,8 +208,7 @@ function flushAfterPaintEffects () {
   afterPaintEffects.forEach(component => {
     component._afterPaintQueued = false
     if (!component._parentDom) return
-    component.__hooks._pendingEffects.forEach(invokeEffect)
-    component.__hooks._pendingEffects = []
+    component.__hooks._pendingEffects = handleEffects(component.__hooks._pendingEffects)
   })
   afterPaintEffects = []
 }
@@ -198,12 +217,27 @@ function scheduleFlushAfterPaint () {
   setTimeout(flushAfterPaintEffects, 0)
 }
 
+/* istanbul ignore else */
 if (typeof window !== 'undefined') {
   afterPaint = (component) => {
     if (!component._afterPaintQueued && (component._afterPaintQueued = true) && afterPaintEffects.push(component) === 1) {
-      requestAnimationFrame(scheduleFlushAfterPaint)
+      if (options.requestAnimationFrame) {
+        options.requestAnimationFrame(flushAfterPaintEffects)
+      } else {
+        requestAnimationFrame(scheduleFlushAfterPaint)
+      }
     }
   }
+}
+
+function handleEffects (effects) {
+  effects.forEach(invokeCleanup)
+  effects.forEach(invokeEffect)
+  return []
+}
+
+function invokeCleanup (hook) {
+  if (hook._cleanup) hook._cleanup()
 }
 
 /**
@@ -211,7 +245,6 @@ if (typeof window !== 'undefined') {
  * @param {import('./internal').EffectHookState} hook
  */
 function invokeEffect (hook) {
-  if (hook._cleanup) hook._cleanup()
   const result = hook._value()
   if (typeof result === 'function') hook._cleanup = result
 }
